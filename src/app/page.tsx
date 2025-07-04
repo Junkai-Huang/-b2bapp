@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { supabase, Product } from '@/utils/supabaseClient'
 import ProductCard from '@/components/ProductCard'
 import { useUser } from '@/context/UserContext'
+import CustomerServiceChat from '@/components/CustomerServiceChat'
 
 export default function HomePage() {
   const { user, logout } = useUser()
@@ -552,6 +553,9 @@ export default function HomePage() {
           </Link>
         </div>
       </div>
+
+      {/* Customer Service Chat Component */}
+      <CustomerServiceChat />
     </div>
   )
 }
