@@ -14,11 +14,14 @@ export default function CreateProductPage() {
     price: '',
     stock: '',
     description: '',
-    image_url: ''
+    image_url: '',
+    quality_report_url: '',
+    quality_report_name: ''
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [qualityReportFile, setQualityReportFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'seller')) {
@@ -31,6 +34,41 @@ export default function CreateProductPage() {
     setFormData(prev => ({
       ...prev,
       [name]: value
+    }));
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type (PDF, DOC, DOCX, JPG, PNG)
+      const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'];
+      if (!allowedTypes.includes(file.type)) {
+        setError('质检报告只支持 PDF、DOC、DOCX、JPG、PNG 格式');
+        return;
+      }
+
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        setError('文件大小不能超过 10MB');
+        return;
+      }
+
+      setQualityReportFile(file);
+      setFormData(prev => ({
+        ...prev,
+        quality_report_name: file.name,
+        quality_report_url: `demo_file_${Date.now()}_${file.name}` // Demo URL
+      }));
+      setError(''); // Clear any previous errors
+    }
+  };
+
+  const removeQualityReport = () => {
+    setQualityReportFile(null);
+    setFormData(prev => ({
+      ...prev,
+      quality_report_name: '',
+      quality_report_url: ''
     }));
   };
 
@@ -76,6 +114,10 @@ export default function CreateProductPage() {
           stock: stock,
           description: formData.description || null,
           image_url: formData.image_url || null,
+          quality_report_url: formData.quality_report_url || null,
+          quality_report_name: formData.quality_report_name || null,
+          quality_status: formData.quality_report_url ? 'pending' : 'none', // pending, approved, rejected, none
+          stock_status: 'in_stock', // in_stock, out_of_stock, low_stock
           seller_id: user!.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -95,8 +137,11 @@ export default function CreateProductPage() {
           price: '',
           stock: '',
           description: '',
-          image_url: ''
+          image_url: '',
+          quality_report_url: '',
+          quality_report_name: ''
         });
+        setQualityReportFile(null);
 
         // 3秒后跳转到仪表盘
         setTimeout(() => {
@@ -133,8 +178,11 @@ export default function CreateProductPage() {
         price: '',
         stock: '',
         description: '',
-        image_url: ''
+        image_url: '',
+        quality_report_url: '',
+        quality_report_name: ''
       });
+      setQualityReportFile(null);
 
       // 3秒后跳转到仪表盘
       setTimeout(() => {
@@ -296,6 +344,90 @@ export default function CreateProductPage() {
                 />
                 <p className="mt-1 text-sm text-gray-500">
                   请提供产品图片的网络链接地址
+                </p>
+              </div>
+
+              {/* Quality Report Upload */}
+              <div className="form-group">
+                <label className="form-label">
+                  质检报告 <span className="text-sm text-gray-500">(可选)</span>
+                </label>
+                <div className="mt-1">
+                  {!qualityReportFile ? (
+                    <div className="flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-gray-400 transition-colors">
+                      <div className="space-y-1 text-center">
+                        <svg
+                          className="mx-auto h-12 w-12 text-gray-400"
+                          stroke="currentColor"
+                          fill="none"
+                          viewBox="0 0 48 48"
+                        >
+                          <path
+                            d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                            strokeWidth={2}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <div className="flex text-sm text-gray-600">
+                          <label
+                            htmlFor="quality-report"
+                            className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                          >
+                            <span>上传质检报告</span>
+                            <input
+                              id="quality-report"
+                              name="quality-report"
+                              type="file"
+                              className="sr-only"
+                              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                              onChange={handleFileChange}
+                            />
+                          </label>
+                          <p className="pl-1">或拖拽文件到此处</p>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          支持 PDF, DOC, DOCX, JPG, PNG 格式，最大 10MB
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md border">
+                      <div className="flex items-center">
+                        <svg
+                          className="h-8 w-8 text-gray-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                          />
+                        </svg>
+                        <div className="ml-3">
+                          <p className="text-sm font-medium text-gray-900">
+                            {qualityReportFile.name}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {(qualityReportFile.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={removeQualityReport}
+                        className="text-red-600 hover:text-red-800 text-sm font-medium"
+                      >
+                        移除
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <p className="mt-2 text-sm text-gray-500">
+                  上传质检报告有助于提高产品可信度，加快审核通过
                 </p>
               </div>
 
