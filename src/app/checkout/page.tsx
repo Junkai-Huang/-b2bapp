@@ -1,18 +1,23 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useUser } from '@/context/UserContext';
-import { useCart } from '@/context/CartContext';
+import { useCart, CartItem } from '@/context/CartContext';
 import { supabase } from '@/utils/supabaseClient';
 
 export default function CheckoutPage() {
   const { user, loading } = useUser();
   const { items, getTotalAmount, clearCart } = useCart();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [checkoutItems, setCheckoutItems] = useState<CartItem[]>([]);
+  const [totalAmount, setTotalAmount] = useState(0);
+
+  const isBuyNow = searchParams.get('buyNow') === 'true';
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'buyer')) {
@@ -21,25 +26,112 @@ export default function CheckoutPage() {
   }, [user, loading, router]);
 
   useEffect(() => {
-    if (items.length === 0) {
-      router.push('/cart');
+    if (isBuyNow) {
+      // Handle Buy Now - get item from sessionStorage
+      const buyNowItemStr = sessionStorage.getItem('buyNowItem');
+      if (buyNowItemStr) {
+        const buyNowItem = JSON.parse(buyNowItemStr);
+        setCheckoutItems([buyNowItem]);
+        setTotalAmount(buyNowItem.price * buyNowItem.quantity);
+      } else {
+        router.push('/');
+      }
+    } else {
+      // Handle regular cart checkout
+      if (items.length === 0) {
+        router.push('/cart');
+      } else {
+        setCheckoutItems(items);
+        setTotalAmount(getTotalAmount());
+      }
     }
-  }, [items, router]);
+  }, [items, router, isBuyNow, getTotalAmount]);
 
   const handleSubmitOrder = async () => {
-    if (!user || items.length === 0) return;
+    if (!user || checkoutItems.length === 0) return;
 
     setSubmitting(true);
     setError('');
 
     try {
-      // 创建订单
+      // Check if we're in demo mode
+      const isDemoMode = !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+                        process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co';
+
+      if (isDemoMode) {
+        // Demo mode - save to localStorage
+        const orderId = Date.now().toString(); // Use timestamp as order ID (convert to string)
+        const newOrder = {
+          id: orderId,
+          buyer_id: user.id,
+          total_amount: totalAmount,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          buyer: {
+            business_name: user.business_name,
+            email: user.email
+          },
+          order_items: checkoutItems.map(item => ({
+            id: Date.now() + Math.random(), // Unique ID for each item
+            order_id: orderId,
+            product_id: item.productId,
+            quantity: item.quantity,
+            unit_price: item.price,
+            product: {
+              name_cn: item.productName,
+              seller: {
+                business_name: item.sellerName
+              }
+            }
+          }))
+        };
+
+        // Save order to localStorage
+        const existingOrders = JSON.parse(localStorage.getItem('demo_orders') || '[]');
+        existingOrders.push(newOrder);
+        localStorage.setItem('demo_orders', JSON.stringify(existingOrders));
+
+        // Update product stock in demo mode
+        const demoProducts = JSON.parse(localStorage.getItem('demo_products') || '[]');
+        const sellerProducts = JSON.parse(localStorage.getItem('demo_seller_products') || '[]');
+
+        // Update both demo product lists
+        const updateProductStock = (productList: any[]) => {
+          return productList.map(product => {
+            const cartItem = checkoutItems.find(item => item.productId.toString() === product.id.toString());
+            if (cartItem) {
+              return {
+                ...product,
+                stock: Math.max(0, product.stock - cartItem.quantity),
+                updated_at: new Date().toISOString()
+              };
+            }
+            return product;
+          });
+        };
+
+        localStorage.setItem('demo_products', JSON.stringify(updateProductStock(demoProducts)));
+        localStorage.setItem('demo_seller_products', JSON.stringify(updateProductStock(sellerProducts)));
+
+        // Clear cart or sessionStorage based on purchase type
+        if (isBuyNow) {
+          sessionStorage.removeItem('buyNowItem');
+        } else {
+          clearCart();
+        }
+
+        router.push(`/order/${orderId}`);
+        return;
+      }
+
+      // Real Supabase mode (original code)
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert([
           {
             buyer_id: user.id,
-            total_amount: getTotalAmount(),
+            total_amount: totalAmount,
             status: 'pending'
           }
         ])
@@ -51,7 +143,7 @@ export default function CheckoutPage() {
       }
 
       // 创建订单项目
-      const orderItems = items.map(item => ({
+      const orderItems = checkoutItems.map(item => ({
         order_id: order.id,
         product_id: item.productId,
         quantity: item.quantity,
@@ -67,7 +159,7 @@ export default function CheckoutPage() {
       }
 
       // 更新产品库存
-      for (const item of items) {
+      for (const item of checkoutItems) {
         // 先获取当前库存
         const { data: product } = await supabase
           .from('products')
@@ -89,8 +181,12 @@ export default function CheckoutPage() {
         }
       }
 
-      // 清空购物车
-      clearCart();
+      // Clear cart or sessionStorage based on purchase type
+      if (isBuyNow) {
+        sessionStorage.removeItem('buyNowItem');
+      } else {
+        clearCart();
+      }
 
       // 跳转到订单详情页
       router.push(`/order/${order.id}`);
@@ -114,7 +210,7 @@ export default function CheckoutPage() {
     );
   }
 
-  if (!user || user.role !== 'buyer' || items.length === 0) {
+  if (!user || user.role !== 'buyer' || checkoutItems.length === 0) {
     return null;
   }
 
@@ -151,7 +247,7 @@ export default function CheckoutPage() {
                   <h2 className="text-lg font-medium text-gray-900 mb-4">订单详情</h2>
                   
                   <div className="space-y-4">
-                    {items.map((item) => (
+                    {checkoutItems.map((item) => (
                       <div key={item.productId} className="flex justify-between items-center border-b pb-4 last:border-b-0 last:pb-0">
                         <div>
                           <h3 className="font-medium text-gray-900">{item.productName}</h3>
@@ -192,18 +288,18 @@ export default function CheckoutPage() {
                   <div className="space-y-3">
                     <div className="flex justify-between text-sm">
                       <span>商品总数</span>
-                      <span>{items.reduce((sum, item) => sum + item.quantity, 0)} kg</span>
+                      <span>{checkoutItems.reduce((sum, item) => sum + item.quantity, 0)} kg</span>
                     </div>
-                    
+
                     <div className="flex justify-between text-sm">
                       <span>商品总价</span>
-                      <span>¥{getTotalAmount().toFixed(2)}</span>
+                      <span>¥{totalAmount.toFixed(2)}</span>
                     </div>
-                    
+
                     <div className="border-t pt-3">
                       <div className="flex justify-between text-lg font-semibold">
                         <span>订单总计</span>
-                        <span className="text-red-600">¥{getTotalAmount().toFixed(2)}</span>
+                        <span className="text-red-600">¥{totalAmount.toFixed(2)}</span>
                       </div>
                     </div>
                   </div>

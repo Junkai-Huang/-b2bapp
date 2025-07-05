@@ -24,6 +24,7 @@ export default function ProductDetailPage() {
   const [error, setError] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [buyingNow, setBuyingNow] = useState(false);
 
   useEffect(() => {
     if (params.id) {
@@ -435,6 +436,41 @@ export default function ProductDetailPage() {
     }
   };
 
+  const handleBuyNow = () => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    if (user.role !== 'buyer') {
+      alert('只有买家可以购买产品');
+      return;
+    }
+
+    setBuyingNow(true);
+
+    try {
+      // Create a temporary cart item for immediate purchase
+      const tempCartItem = {
+        productId: product!.id,
+        productName: product!.name_cn,
+        price: product!.price,
+        quantity: quantity,
+        sellerName: product!.seller.business_name
+      };
+
+      // Store the temp item in sessionStorage for checkout
+      sessionStorage.setItem('buyNowItem', JSON.stringify(tempCartItem));
+
+      // Redirect to a special checkout page for buy now
+      router.push('/checkout?buyNow=true');
+    } catch (error) {
+      alert('立即购买失败，请重试');
+    } finally {
+      setBuyingNow(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -570,13 +606,23 @@ export default function ProductDetailPage() {
                     />
                   </div>
 
-                  <button
-                    onClick={handleAddToCart}
-                    disabled={addingToCart}
-                    className="w-full btn-primary py-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {addingToCart ? '添加中...' : '加入购物车'}
-                  </button>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      onClick={handleAddToCart}
+                      disabled={addingToCart || buyingNow}
+                      className="btn-secondary py-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {addingToCart ? '添加中...' : '加入购物车'}
+                    </button>
+
+                    <button
+                      onClick={handleBuyNow}
+                      disabled={buyingNow || addingToCart}
+                      className="btn-primary py-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {buyingNow ? '处理中...' : '立即购买'}
+                    </button>
+                  </div>
 
                   <div className="mt-4 text-center">
                     <p className="text-sm text-gray-500">

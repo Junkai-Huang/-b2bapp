@@ -52,6 +52,43 @@ export default function OrderDetailPage() {
   const fetchOrder = async (orderId: string) => {
     try {
       setOrderLoading(true);
+
+      // Check if we're in demo mode
+      const isDemoMode = !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+                        process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co';
+
+      if (isDemoMode) {
+        // Demo mode - get from localStorage
+        const demoOrders = JSON.parse(localStorage.getItem('demo_orders') || '[]');
+        const orderData = demoOrders.find((order: any) => order.id.toString() === orderId);
+
+        if (!orderData) {
+          setError('订单不存在');
+          return;
+        }
+
+        // 检查用户权限
+        if (user!.role === 'buyer' && orderData.buyer_id !== user!.id) {
+          setError('您没有权限查看此订单');
+          return;
+        }
+
+        if (user!.role === 'seller') {
+          // 检查卖家是否有此订单的商品
+          const hasSellerProducts = orderData.order_items.some((item: any) =>
+            item.product.seller.business_name === user!.business_name
+          );
+          if (!hasSellerProducts) {
+            setError('您没有权限查看此订单');
+            return;
+          }
+        }
+
+        setOrder(orderData);
+        return;
+      }
+
+      // Real Supabase mode (original code)
       const { data, error } = await supabase
         .from('orders')
         .select(`
@@ -82,7 +119,7 @@ export default function OrderDetailPage() {
 
       if (user!.role === 'seller') {
         // 检查卖家是否有此订单的商品
-        const hasSellerProducts = data.order_items.some((item: any) => 
+        const hasSellerProducts = data.order_items.some((item: any) =>
           item.product.seller.id === user!.id
         );
         if (!hasSellerProducts) {

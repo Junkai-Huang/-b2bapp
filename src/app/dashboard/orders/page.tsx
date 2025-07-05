@@ -31,6 +31,14 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [error, setError] = useState('');
+  const [showProcessingModal, setShowProcessingModal] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [processingOptions, setProcessingOptions] = useState({
+    slicing: false,
+    grinding: false,
+    packaging: false
+  });
+  const [processingCost, setProcessingCost] = useState(0);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -50,6 +58,32 @@ export default function OrdersPage() {
     try {
       setLoadingOrders(true);
 
+      // Check if we're in demo mode
+      const isDemoMode = !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+                        process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co';
+
+      if (isDemoMode) {
+        // Demo mode - get from localStorage
+        const demoOrders = JSON.parse(localStorage.getItem('demo_orders') || '[]');
+
+        if (user.role === 'buyer') {
+          // 买家查看自己的订单
+          const buyerOrders = demoOrders.filter((order: any) => order.buyer_id === user.id)
+            .map((order: any) => ({ ...order, id: order.id.toString() })); // Ensure ID is string
+          setOrders(buyerOrders);
+        } else {
+          // 卖家查看包含自己产品的订单
+          const sellerOrders = demoOrders.filter((order: any) =>
+            order.order_items.some((item: any) =>
+              item.product.seller.business_name === user.business_name
+            )
+          ).map((order: any) => ({ ...order, id: order.id.toString() })); // Ensure ID is string
+          setOrders(sellerOrders);
+        }
+        return;
+      }
+
+      // Real Supabase mode (original code)
       if (user.role === 'buyer') {
         // 买家查看自己的订单
         const { data, error } = await supabase
@@ -125,6 +159,71 @@ export default function OrdersPage() {
     } finally {
       setLoadingOrders(false);
     }
+  };
+
+  // Calculate processing cost based on selected options
+  const calculateProcessingCost = (options: typeof processingOptions, order: Order) => {
+    let cost = 0;
+    const totalWeight = order.order_items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+
+    if (options.slicing) cost += totalWeight * 5; // ¥5 per kg for slicing
+    if (options.grinding) cost += totalWeight * 8; // ¥8 per kg for grinding
+    if (options.packaging) cost += totalWeight * 3; // ¥3 per kg for special packaging
+
+    return cost;
+  };
+
+  // Handle processing option changes
+  const handleProcessingChange = (option: keyof typeof processingOptions) => {
+    const newOptions = { ...processingOptions, [option]: !processingOptions[option] };
+    setProcessingOptions(newOptions);
+    if (selectedOrder) {
+      setProcessingCost(calculateProcessingCost(newOptions, selectedOrder));
+    }
+  };
+
+  // Open processing modal
+  const openProcessingModal = (order: Order) => {
+    setSelectedOrder(order);
+    setProcessingOptions({ slicing: false, grinding: false, packaging: false });
+    setProcessingCost(0);
+    setShowProcessingModal(true);
+  };
+
+  // Submit processing request
+  const submitProcessingRequest = () => {
+    if (!selectedOrder) return;
+
+    // In demo mode, update the order with processing info
+    const isDemoMode = !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+                      process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co';
+
+    if (isDemoMode) {
+      const demoOrders = JSON.parse(localStorage.getItem('demo_orders') || '[]');
+      const updatedOrders = demoOrders.map((order: any) => {
+        if (order.id.toString() === selectedOrder.id.toString()) {
+          return {
+            ...order,
+            processing: {
+              options: processingOptions,
+              cost: processingCost,
+              requested_at: new Date().toISOString(),
+              status: 'requested'
+            },
+            total_amount: order.total_amount + processingCost
+          };
+        }
+        return order;
+      });
+      localStorage.setItem('demo_orders', JSON.stringify(updatedOrders));
+
+      // Refresh orders
+      fetchOrders();
+    }
+
+    alert(`代工定制申请已提交！额外费用：¥${processingCost.toFixed(2)}`);
+    setShowProcessingModal(false);
+    setSelectedOrder(null);
   };
 
   if (loading) {
@@ -256,6 +355,32 @@ export default function OrdersPage() {
                             </div>
                           ))}
                         </div>
+
+                        {/* Processing info if exists */}
+                        {(order as any).processing && (
+                          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                            <h5 className="text-sm font-medium text-blue-900 mb-2">代工定制服务</h5>
+                            <div className="text-xs text-blue-800 space-y-1">
+                              {(order as any).processing.options.slicing && <p>• 切片服务</p>}
+                              {(order as any).processing.options.grinding && <p>• 磨粉服务</p>}
+                              {(order as any).processing.options.packaging && <p>• 特殊包装</p>}
+                              <p className="font-medium">额外费用: ¥{(order as any).processing.cost.toFixed(2)}</p>
+                              <p className="text-blue-600">状态: {(order as any).processing.status === 'requested' ? '已申请' : '处理中'}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Processing button for buyers */}
+                        {user.role === 'buyer' && order.status === 'pending' && !(order as any).processing && (
+                          <div className="mt-4">
+                            <button
+                              onClick={() => openProcessingModal(order)}
+                              className="btn-secondary text-sm py-2 px-4"
+                            >
+                              申请代工定制
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -265,6 +390,88 @@ export default function OrdersPage() {
           )}
         </div>
       </div>
+
+      {/* Processing Modal */}
+      {showProcessingModal && selectedOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              代工定制服务 - 订单 #{selectedOrder.id.slice(0, 8)}
+            </h3>
+
+            <div className="space-y-4">
+              <div className="space-y-3">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={processingOptions.slicing}
+                    onChange={() => handleProcessingChange('slicing')}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    切片服务 (¥5/kg)
+                  </span>
+                </label>
+
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={processingOptions.grinding}
+                    onChange={() => handleProcessingChange('grinding')}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    磨粉服务 (¥8/kg)
+                  </span>
+                </label>
+
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={processingOptions.packaging}
+                    onChange={() => handleProcessingChange('packaging')}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    特殊包装 (¥3/kg)
+                  </span>
+                </label>
+              </div>
+
+              <div className="border-t pt-4">
+                <div className="flex justify-between text-sm">
+                  <span>商品总重量:</span>
+                  <span>{selectedOrder.order_items?.reduce((sum, item) => sum + item.quantity, 0) || 0} kg</span>
+                </div>
+                <div className="flex justify-between text-sm mt-1">
+                  <span>代工费用:</span>
+                  <span className="font-medium text-blue-600">¥{processingCost.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-base font-medium mt-2 pt-2 border-t">
+                  <span>总计:</span>
+                  <span className="text-red-600">¥{(selectedOrder.total_amount + processingCost).toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={() => setShowProcessingModal(false)}
+                className="flex-1 btn-secondary py-2"
+              >
+                取消
+              </button>
+              <button
+                onClick={submitProcessingRequest}
+                disabled={processingCost === 0}
+                className="flex-1 btn-primary py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                确认申请
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
