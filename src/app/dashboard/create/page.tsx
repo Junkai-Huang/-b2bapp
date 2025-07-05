@@ -5,6 +5,7 @@ import { useUser } from '@/context/UserContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabaseClient';
 import Link from 'next/link';
+import { demoDataManager } from '@/utils/demoDataManager';
 
 export default function CreateProductPage() {
   const { user, loading } = useUser();
@@ -103,8 +104,8 @@ export default function CreateProductPage() {
                         process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co';
 
       if (isDemoMode) {
-        // Demo mode - save to localStorage
-        const existingProducts = JSON.parse(localStorage.getItem('demo_seller_products') || '[]');
+        // Demo mode - use centralized data manager
+        const existingProducts = demoDataManager.getDemoSellerProducts();
 
         const newProduct = {
           id: Date.now(), // Use timestamp as ID
@@ -114,10 +115,13 @@ export default function CreateProductPage() {
           stock: stock,
           description: formData.description || null,
           image_url: formData.image_url || null,
-          quality_report_url: formData.quality_report_url || null,
-          quality_report_name: formData.quality_report_name || null,
-          quality_status: formData.quality_report_url ? 'pending' : 'none', // pending, approved, rejected, none
-          stock_status: 'in_stock', // in_stock, out_of_stock, low_stock
+          quality_report: formData.quality_report_url ? {
+            file_name: formData.quality_report_name || '',
+            file_url: formData.quality_report_url,
+            uploaded_at: new Date().toISOString()
+          } : undefined,
+          audit_status: formData.quality_report_url ? 'pending' : 'approved',
+          stock_status: 'in_stock' as const,
           seller_id: user!.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -128,7 +132,7 @@ export default function CreateProductPage() {
         };
 
         existingProducts.push(newProduct);
-        localStorage.setItem('demo_seller_products', JSON.stringify(existingProducts));
+        demoDataManager.setDemoSellerProducts(existingProducts);
 
         setSuccess(true);
         // 重置表单

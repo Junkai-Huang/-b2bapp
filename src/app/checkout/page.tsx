@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useUser } from '@/context/UserContext';
 import { useCart, CartItem } from '@/context/CartContext';
 import { supabase } from '@/utils/supabaseClient';
+import { demoDataManager } from '@/utils/demoDataManager';
 
 export default function CheckoutPage() {
   const { user, loading } = useUser();
@@ -87,14 +88,14 @@ export default function CheckoutPage() {
           }))
         };
 
-        // Save order to localStorage
-        const existingOrders = JSON.parse(localStorage.getItem('demo_orders') || '[]');
+        // Save order using centralized data manager
+        const existingOrders = demoDataManager.getDemoOrders();
         existingOrders.push(newOrder);
-        localStorage.setItem('demo_orders', JSON.stringify(existingOrders));
+        demoDataManager.setDemoOrders(existingOrders);
 
         // Update product stock in demo mode
-        const demoProducts = JSON.parse(localStorage.getItem('demo_products') || '[]');
-        const sellerProducts = JSON.parse(localStorage.getItem('demo_seller_products') || '[]');
+        const demoProducts = demoDataManager.getDemoProducts();
+        const sellerProducts = demoDataManager.getDemoSellerProducts();
 
         // Update both demo product lists
         const updateProductStock = (productList: any[]) => {
@@ -111,8 +112,8 @@ export default function CheckoutPage() {
           });
         };
 
-        localStorage.setItem('demo_products', JSON.stringify(updateProductStock(demoProducts)));
-        localStorage.setItem('demo_seller_products', JSON.stringify(updateProductStock(sellerProducts)));
+        demoDataManager.setDemoProducts(updateProductStock(demoProducts));
+        demoDataManager.setDemoSellerProducts(updateProductStock(sellerProducts));
 
         // Clear cart or sessionStorage based on purchase type
         if (isBuyNow) {

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useUser } from '@/context/UserContext';
 import { supabase } from '@/utils/supabaseClient';
+import { demoDataManager } from '@/utils/demoDataManager';
 
 interface OrderDetails {
   id: string;
@@ -58,8 +59,8 @@ export default function OrderDetailPage() {
                         process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co';
 
       if (isDemoMode) {
-        // Demo mode - get from localStorage
-        const demoOrders = JSON.parse(localStorage.getItem('demo_orders') || '[]');
+        // Demo mode - use centralized data manager
+        const demoOrders = demoDataManager.getDemoOrders();
         const orderData = demoOrders.find((order: any) => order.id.toString() === orderId);
 
         if (!orderData) {

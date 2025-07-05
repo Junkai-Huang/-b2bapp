@@ -7,6 +7,7 @@ import { supabase, Product } from '@/utils/supabaseClient'
 import ProductCard from '@/components/ProductCard'
 import { useUser } from '@/context/UserContext'
 import CustomerServiceChat from '@/components/CustomerServiceChat'
+import { demoDataManager } from '@/utils/demoDataManager'
 
 export default function HomePage() {
   const { user, logout } = useUser()
@@ -49,7 +50,24 @@ export default function HomePage() {
                         process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co'
 
       if (isDemoMode) {
-        // Demo products - 20 different Chinese medicines
+        // Use centralized data manager for demo products
+        const allProductsList = demoDataManager.getAllProducts()
+
+        // If no products exist, initialize with defaults
+        if (allProductsList.length === 0) {
+          demoDataManager.initializeDemoData()
+          const refreshedProducts = demoDataManager.getAllProducts()
+          setAllProducts(refreshedProducts)
+          setProducts(refreshedProducts)
+        } else {
+          setAllProducts(allProductsList)
+          setProducts(allProductsList)
+        }
+        return
+      }
+
+      // Original demo products as fallback (will be moved to demoDataManager)
+      if (false) {
         const demoProducts = [
           {
             id: 1,
@@ -312,18 +330,7 @@ export default function HomePage() {
             seller: { business_name: '四川石柱药材' }
           }
         ]
-
-        // Get user-created products from localStorage
-        const userCreatedProducts = JSON.parse(localStorage.getItem('demo_seller_products') || '[]')
-
-        // Combine demo products with user-created products
-        const allProductsList = [...demoProducts, ...userCreatedProducts]
-
-        // Simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 800))
-        setAllProducts(allProductsList)
-        setProducts(allProductsList)
-        return
+        // This fallback code is now handled by demoDataManager
       }
 
       const { data, error } = await supabase

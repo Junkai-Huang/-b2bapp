@@ -5,6 +5,7 @@ import { useUser } from '@/context/UserContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabaseClient';
 import Link from 'next/link';
+import { demoDataManager } from '@/utils/demoDataManager';
 
 interface Order {
   id: string;
@@ -63,8 +64,8 @@ export default function OrdersPage() {
                         process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co';
 
       if (isDemoMode) {
-        // Demo mode - get from localStorage
-        const demoOrders = JSON.parse(localStorage.getItem('demo_orders') || '[]');
+        // Demo mode - use centralized data manager
+        const demoOrders = demoDataManager.getDemoOrders();
 
         if (user.role === 'buyer') {
           // 买家查看自己的订单
@@ -199,7 +200,7 @@ export default function OrdersPage() {
                       process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co';
 
     if (isDemoMode) {
-      const demoOrders = JSON.parse(localStorage.getItem('demo_orders') || '[]');
+      const demoOrders = demoDataManager.getDemoOrders();
       const updatedOrders = demoOrders.map((order: any) => {
         if (order.id.toString() === selectedOrder.id.toString()) {
           return {
@@ -215,7 +216,7 @@ export default function OrdersPage() {
         }
         return order;
       });
-      localStorage.setItem('demo_orders', JSON.stringify(updatedOrders));
+      demoDataManager.setDemoOrders(updatedOrders);
 
       // Refresh orders
       fetchOrders();

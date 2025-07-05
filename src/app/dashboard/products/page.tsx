@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useUser } from '../../../context/UserContext';
 import { supabase } from '../../../utils/supabaseClient';
+import { demoDataManager } from '../../../utils/demoDataManager';
 
 interface Product {
   id: number;
@@ -49,8 +50,8 @@ export default function ProductsManagePage() {
                         process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co';
 
       if (isDemoMode) {
-        // Demo mode - get from localStorage
-        const demoProducts = JSON.parse(localStorage.getItem('demo_seller_products') || '[]');
+        // Demo mode - use centralized data manager
+        const demoProducts = demoDataManager.getDemoSellerProducts();
         const userProducts = demoProducts.filter((p: Product) => p.seller_id === user!.id);
         setProducts(userProducts);
         return;
@@ -85,12 +86,12 @@ export default function ProductsManagePage() {
                         process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co';
 
       if (isDemoMode) {
-        // Demo mode - update localStorage
-        const demoProducts = JSON.parse(localStorage.getItem('demo_seller_products') || '[]');
+        // Demo mode - use centralized data manager
+        const demoProducts = demoDataManager.getDemoSellerProducts();
         const updatedProducts = demoProducts.map((p: Product) =>
           p.id === productId ? { ...p, stock_status: newStatus, updated_at: new Date().toISOString() } : p
         );
-        localStorage.setItem('demo_seller_products', JSON.stringify(updatedProducts));
+        demoDataManager.setDemoSellerProducts(updatedProducts);
 
         // Update local state
         setProducts(prev => prev.map(p =>
@@ -157,11 +158,11 @@ export default function ProductsManagePage() {
                         process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co';
 
       if (isDemoMode) {
-        // Demo mode - remove from localStorage
-        const demoProducts = JSON.parse(localStorage.getItem('demo_seller_products') || '[]');
+        // Demo mode - use centralized data manager
+        const demoProducts = demoDataManager.getDemoSellerProducts();
         const updatedProducts = demoProducts.filter((p: Product) => p.id !== productId);
-        localStorage.setItem('demo_seller_products', JSON.stringify(updatedProducts));
-        
+        demoDataManager.setDemoSellerProducts(updatedProducts);
+
         // Update local state
         setProducts(prev => prev.filter(p => p.id !== productId));
         return;
