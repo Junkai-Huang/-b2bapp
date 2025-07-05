@@ -104,11 +104,12 @@ export default function CreateProductPage() {
                         process.env.NEXT_PUBLIC_SUPABASE_URL === 'https://your-project-id.supabase.co';
 
       if (isDemoMode) {
-        // Demo mode - use centralized data manager
+        // Demo mode - create product for admin review first
         const existingProducts = demoDataManager.getDemoSellerProducts();
+        const productId = Date.now().toString();
 
         const newProduct = {
-          id: Date.now(), // Use timestamp as ID
+          id: productId,
           name_cn: formData.name_cn,
           name_en: '', // Optional field
           price: price,
@@ -120,7 +121,7 @@ export default function CreateProductPage() {
             file_url: formData.quality_report_url,
             uploaded_at: new Date().toISOString()
           } : undefined,
-          audit_status: formData.quality_report_url ? 'pending' : 'approved',
+          audit_status: 'pending', // Always pending for admin review
           stock_status: 'in_stock' as const,
           seller_id: user!.id,
           created_at: new Date().toISOString(),
@@ -131,8 +132,12 @@ export default function CreateProductPage() {
           }
         };
 
+        // Add to seller products (not visible in market yet)
         existingProducts.push(newProduct);
         demoDataManager.setDemoSellerProducts(existingProducts);
+
+        // Create admin review entry
+        demoDataManager.createProductReview(productId, user!.id, price);
 
         setSuccess(true);
         // 重置表单
@@ -256,7 +261,7 @@ export default function CreateProductPage() {
                 </div>
                 <div className="ml-3">
                   <p className="text-sm font-medium text-green-800">
-                    产品创建成功！3秒后将自动跳转到仪表盘...
+                    产品提交成功！您的产品正在等待管理员审核，审核通过后将在市场中显示。3秒后将自动跳转到仪表盘...
                   </p>
                 </div>
               </div>

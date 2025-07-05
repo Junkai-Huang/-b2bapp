@@ -10,8 +10,9 @@ export default function RegisterPage() {
     email: '',
     password: '',
     confirmPassword: '',
-    role: 'buyer' as 'buyer' | 'seller',
-    businessName: ''
+    role: 'buyer' as 'buyer' | 'seller' | 'admin',
+    businessName: '',
+    adminCode: ''
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -50,12 +51,27 @@ export default function RegisterPage() {
       return
     }
 
+    // Admin registration validation
+    if (formData.role === 'admin') {
+      if (!formData.adminCode.trim()) {
+        setError('管理员注册需要提供注册码')
+        setLoading(false)
+        return
+      }
+      if (formData.email !== 'admin@platform.com') {
+        setError('管理员账号只能使用指定邮箱: admin@platform.com')
+        setLoading(false)
+        return
+      }
+    }
+
     try {
       await signUpUser(
         formData.email,
         formData.password,
         formData.role,
-        formData.businessName
+        formData.businessName,
+        formData.adminCode || undefined
       )
 
       // Check if we're in demo mode
@@ -140,8 +156,30 @@ export default function RegisterPage() {
               >
                 <option value="buyer">买家</option>
                 <option value="seller">卖家</option>
+                <option value="admin">管理员</option>
               </select>
             </div>
+
+            {formData.role === 'admin' && (
+              <div className="form-group">
+                <label htmlFor="adminCode" className="form-label">
+                  管理员注册码
+                </label>
+                <input
+                  id="adminCode"
+                  name="adminCode"
+                  type="password"
+                  required
+                  className="input-field"
+                  placeholder="请输入管理员注册码"
+                  value={formData.adminCode}
+                  onChange={handleChange}
+                />
+                <p className="mt-1 text-sm text-gray-600">
+                  管理员注册需要特殊注册码，请联系系统管理员获取
+                </p>
+              </div>
+            )}
 
             <div className="form-group">
               <label htmlFor="password" className="form-label">

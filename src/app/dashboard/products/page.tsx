@@ -147,6 +147,30 @@ export default function ProductsManagePage() {
     }
   };
 
+  const getAdminApprovalStatus = (productId: number) => {
+    const reviews = demoDataManager.getAdminProductReviews();
+    const review = reviews.find(r => r.product_id === productId.toString());
+    return review?.status || 'pending';
+  };
+
+  const getAdminApprovalStatusColor = (status: string) => {
+    switch (status) {
+      case 'approved': return 'text-green-600 bg-green-100';
+      case 'pending': return 'text-orange-600 bg-orange-100';
+      case 'rejected': return 'text-red-600 bg-red-100';
+      default: return 'text-gray-600 bg-gray-100';
+    }
+  };
+
+  const getAdminApprovalStatusText = (status: string) => {
+    switch (status) {
+      case 'approved': return '已上架';
+      case 'pending': return '待审核';
+      case 'rejected': return '已拒绝';
+      default: return '未知';
+    }
+  };
+
   const handleDeleteProduct = async (productId: number) => {
     if (!confirm('确定要删除这个产品吗？')) {
       return;
@@ -283,6 +307,9 @@ export default function ProductsManagePage() {
 
                     {/* Status Badges */}
                     <div className="flex flex-wrap gap-2 mb-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getAdminApprovalStatusColor(getAdminApprovalStatus(product.id))}`}>
+                        审核: {getAdminApprovalStatusText(getAdminApprovalStatus(product.id))}
+                      </span>
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getQualityStatusColor(product.quality_status)}`}>
                         质检: {getQualityStatusText(product.quality_status)}
                       </span>

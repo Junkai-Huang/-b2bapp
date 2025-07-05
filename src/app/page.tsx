@@ -380,8 +380,11 @@ export default function HomePage() {
                   <span className="text-gray-600">
                     欢迎, {user.business_name}
                   </span>
-                  <Link href="/dashboard" className="text-gray-600 hover:text-gray-900">
-                    仪表盘
+                  <Link
+                    href={user.role === 'admin' ? '/admin' : '/dashboard'}
+                    className="text-gray-600 hover:text-gray-900"
+                  >
+                    {user.role === 'admin' ? '管理后台' : '仪表盘'}
                   </Link>
                   <button
                     onClick={handleLogout}

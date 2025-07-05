@@ -65,7 +65,7 @@ export interface DemoUser {
   id: string;
   email: string;
   business_name: string;
-  role: 'buyer' | 'seller';
+  role: 'buyer' | 'seller' | 'admin';
   created_at: string;
 }
 
@@ -82,14 +82,65 @@ export interface GroupBuyActivity {
   created_at: string;
 }
 
+// Admin-related interfaces
+export interface BuyingRequest {
+  id: string;
+  buyer_id: string;
+  product_name: string;
+  quantity: number;
+  target_price: number;
+  description: string;
+  status: 'pending' | 'admin_approved' | 'sent_to_seller' | 'seller_responded' | 'completed' | 'rejected';
+  created_at: string;
+  updated_at: string;
+  admin_approved_at?: string;
+  admin_notes?: string;
+  buyer: {
+    business_name: string;
+    email: string;
+  };
+  seller_responses?: SellerResponse[];
+}
+
+export interface SellerResponse {
+  id: string;
+  request_id: string;
+  seller_id: string;
+  offered_price: number;
+  available_quantity: number;
+  notes: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  created_at: string;
+  seller: {
+    business_name: string;
+    email: string;
+  };
+}
+
+export interface AdminProductReview {
+  id: string;
+  product_id: string;
+  seller_id: string;
+  original_price: number;
+  admin_adjusted_price?: number;
+  admin_notes?: string;
+  status: 'pending_review' | 'approved' | 'rejected' | 'needs_revision';
+  reviewed_at?: string;
+  created_at: string;
+  product: DemoProduct;
+}
+
 // Storage keys
 const STORAGE_KEYS = {
   DEMO_PRODUCTS: 'demo_products',
-  DEMO_SELLER_PRODUCTS: 'demo_seller_products', 
+  DEMO_SELLER_PRODUCTS: 'demo_seller_products',
   DEMO_ORDERS: 'demo_orders',
   DEMO_USERS: 'demo_users',
   DEMO_CURRENT_USER: 'demo_current_user',
   GROUP_BUY_ACTIVITIES: 'demo_group_buy_activities',
+  BUYING_REQUESTS: 'demo_buying_requests',
+  SELLER_RESPONSES: 'demo_seller_responses',
+  ADMIN_PRODUCT_REVIEWS: 'demo_admin_product_reviews',
   CART: 'cart',
   DATA_VERSION: 'demo_data_version'
 } as const;
@@ -161,11 +212,8 @@ class DemoDataManager {
       this.setGroupBuyActivities(this.getDefaultGroupBuyActivities());
     }
 
-    // Initialize demo users if empty
-    const existingUsers = this.getDemoUsers();
-    if (existingUsers.length === 0) {
-      this.setDemoUsers(this.getDefaultUsers());
-    }
+    // Initialize demo users if empty, or migrate existing users
+    this.migrateUsers();
   }
 
   // Demo Products Management
@@ -231,11 +279,172 @@ class DemoDataManager {
     this.setItem(STORAGE_KEYS.GROUP_BUY_ACTIVITIES, JSON.stringify(activities));
   }
 
-  // Get all products (demo + seller created)
+  // Get all products (demo + seller created) - only admin-approved products visible in market
   getAllProducts(): DemoProduct[] {
     const demoProducts = this.getDemoProducts();
     const sellerProducts = this.getDemoSellerProducts();
+    const allProducts = [...demoProducts, ...sellerProducts];
+
+    // Auto-approve existing seller products that don't have review records (migration)
+    this.migrateExistingProducts();
+
+    // Filter to only show admin-approved products
+    const approvedReviews = this.getAdminProductReviews().filter(r => r.status === 'approved');
+    const approvedProductIds = new Set(approvedReviews.map(r => r.product_id));
+
+    return allProducts.filter(product => {
+      // Demo products (hardcoded) are always approved
+      const isDemoProduct = demoProducts.some(p => p.id === product.id);
+      if (isDemoProduct) return true;
+
+      // Seller products need admin approval
+      return approvedProductIds.has(product.id.toString());
+    });
+  }
+
+  // Get all products including pending ones (for admin use)
+  getAllProductsIncludingPending(): DemoProduct[] {
+    const demoProducts = this.getDemoProducts();
+    const sellerProducts = this.getDemoSellerProducts();
     return [...demoProducts, ...sellerProducts];
+  }
+
+  // Migration function to auto-approve existing seller products
+  private migrateExistingProducts(): void {
+    const sellerProducts = this.getDemoSellerProducts();
+    const existingReviews = this.getAdminProductReviews();
+    const reviewedProductIds = new Set(existingReviews.map(r => r.product_id));
+
+    // Find seller products that don't have review records
+    const unreviewed = sellerProducts.filter(p => !reviewedProductIds.has(p.id.toString()));
+
+    if (unreviewed.length > 0) {
+      console.log(`Auto-approving ${unreviewed.length} existing products for backward compatibility`);
+
+      // Create approved review records for existing products
+      unreviewed.forEach(product => {
+        const review: AdminProductReview = {
+          id: `review-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          product_id: product.id.toString(),
+          seller_id: product.seller_id,
+          original_price: product.price,
+          adjusted_price: product.price, // Keep original price
+          status: 'approved',
+          admin_notes: 'Auto-approved existing product',
+          created_at: new Date().toISOString(),
+          reviewed_at: new Date().toISOString(),
+          product: {
+            name_cn: product.name_cn,
+            description: product.description || ''
+          },
+          seller: {
+            business_name: product.seller?.business_name || 'Unknown Seller'
+          }
+        };
+
+        existingReviews.push(review);
+      });
+
+      this.setAdminProductReviews(existingReviews);
+    }
+  }
+
+  // Migration function to preserve existing users and add admin if missing
+  private migrateUsers(): void {
+    // First, check for users in old localStorage key and migrate them
+    this.migrateOldUserData();
+
+    const existingUsers = this.getDemoUsers();
+
+    if (existingUsers.length === 0) {
+      // No existing users, initialize with defaults
+      this.setDemoUsers(this.getDefaultUsers());
+      return;
+    }
+
+    // Check if admin user exists
+    const hasAdmin = existingUsers.some(user => user.role === 'admin');
+
+    if (!hasAdmin) {
+      // Add admin user to existing users
+      const adminUser: DemoUser = {
+        id: 'demo-admin-1',
+        email: 'admin@platform.com',
+        business_name: '中药材B2B平台管理中心',
+        role: 'admin',
+        created_at: new Date().toISOString()
+      };
+
+      existingUsers.push(adminUser);
+      this.setDemoUsers(existingUsers);
+      console.log('Added admin user to existing user list');
+    }
+  }
+
+  // Migrate users from old localStorage key to centralized system
+  private migrateOldUserData(): void {
+    if (typeof window === 'undefined') return;
+
+    const oldUsers = localStorage.getItem('demo_users');
+    const oldCurrentUser = localStorage.getItem('demo_current_user');
+
+    if (oldUsers) {
+      try {
+        const parsedUsers = JSON.parse(oldUsers);
+        const existingUsers = this.getDemoUsers();
+
+        // Convert old users to DemoUser format and merge with existing
+        const migratedUsers: DemoUser[] = parsedUsers.map((user: any) => ({
+          id: user.id,
+          email: user.email || user.id,
+          business_name: user.business_name,
+          role: user.role,
+          created_at: user.created_at
+        }));
+
+        // Merge with existing users (avoid duplicates)
+        const allUsers = [...existingUsers];
+        migratedUsers.forEach(migratedUser => {
+          if (!allUsers.some(u => u.id === migratedUser.id)) {
+            allUsers.push(migratedUser);
+          }
+        });
+
+        this.setDemoUsers(allUsers);
+        console.log(`Migrated ${migratedUsers.length} users from old storage`);
+
+        // Remove old data
+        localStorage.removeItem('demo_users');
+      } catch (error) {
+        console.error('Error migrating old user data:', error);
+      }
+    }
+
+    if (oldCurrentUser) {
+      try {
+        const parsedCurrentUser = JSON.parse(oldCurrentUser);
+        const currentUser = this.getCurrentDemoUser();
+
+        if (!currentUser) {
+          // Migrate current user
+          const migratedCurrentUser: DemoUser = {
+            id: parsedCurrentUser.id,
+            email: parsedCurrentUser.email || parsedCurrentUser.id,
+            business_name: parsedCurrentUser.business_name,
+            role: parsedCurrentUser.role,
+            created_at: parsedCurrentUser.created_at
+          };
+
+          this.setCurrentDemoUser(migratedCurrentUser);
+          console.log('Migrated current user from old storage');
+        }
+
+        // Remove old data
+        localStorage.removeItem('demo_current_user');
+      } catch (error) {
+        console.error('Error migrating old current user data:', error);
+      }
+    }
   }
 
   // Clear all demo data (for testing/reset)
@@ -656,10 +865,17 @@ class DemoDataManager {
         created_at: new Date().toISOString()
       },
       {
-        id: 'demo-seller-1', 
+        id: 'demo-seller-1',
         email: 'seller@demo.com',
         business_name: '甘肃中药材有限公司',
         role: 'seller',
+        created_at: new Date().toISOString()
+      },
+      {
+        id: 'demo-admin-1',
+        email: 'admin@platform.com',
+        business_name: '中药材B2B平台管理中心',
+        role: 'admin',
         created_at: new Date().toISOString()
       }
     ];
@@ -680,6 +896,171 @@ class DemoDataManager {
         created_at: new Date().toISOString()
       }
     ];
+  }
+
+  // Admin-related methods
+  getBuyingRequests(): BuyingRequest[] {
+    if (!this.isClient) return [];
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.BUYING_REQUESTS);
+      return data ? JSON.parse(data) : [];
+    } catch (error) {
+      console.error('Error getting buying requests:', error);
+      return [];
+    }
+  }
+
+  setBuyingRequests(requests: BuyingRequest[]): void {
+    if (!this.isClient) return;
+    try {
+      localStorage.setItem(STORAGE_KEYS.BUYING_REQUESTS, JSON.stringify(requests));
+    } catch (error) {
+      console.error('Error setting buying requests:', error);
+    }
+  }
+
+  getSellerResponses(): SellerResponse[] {
+    if (!this.isClient) return [];
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.SELLER_RESPONSES);
+      return data ? JSON.parse(data) : [];
+    } catch (error) {
+      console.error('Error getting seller responses:', error);
+      return [];
+    }
+  }
+
+  setSellerResponses(responses: SellerResponse[]): void {
+    if (!this.isClient) return;
+    try {
+      localStorage.setItem(STORAGE_KEYS.SELLER_RESPONSES, JSON.stringify(responses));
+    } catch (error) {
+      console.error('Error setting seller responses:', error);
+    }
+  }
+
+  getAdminProductReviews(): AdminProductReview[] {
+    if (!this.isClient) return [];
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.ADMIN_PRODUCT_REVIEWS);
+      return data ? JSON.parse(data) : [];
+    } catch (error) {
+      console.error('Error getting admin product reviews:', error);
+      return [];
+    }
+  }
+
+  setAdminProductReviews(reviews: AdminProductReview[]): void {
+    if (!this.isClient) return;
+    try {
+      localStorage.setItem(STORAGE_KEYS.ADMIN_PRODUCT_REVIEWS, JSON.stringify(reviews));
+    } catch (error) {
+      console.error('Error setting admin product reviews:', error);
+    }
+  }
+
+  // Admin workflow methods
+  createBuyingRequest(request: Omit<BuyingRequest, 'id' | 'created_at' | 'updated_at'>): string {
+    const newRequest: BuyingRequest = {
+      ...request,
+      id: Date.now().toString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const requests = this.getBuyingRequests();
+    requests.push(newRequest);
+    this.setBuyingRequests(requests);
+
+    return newRequest.id;
+  }
+
+  approveBuyingRequest(requestId: string, adminNotes?: string): boolean {
+    const requests = this.getBuyingRequests();
+    const requestIndex = requests.findIndex(r => r.id === requestId);
+
+    if (requestIndex === -1) return false;
+
+    requests[requestIndex] = {
+      ...requests[requestIndex],
+      status: 'admin_approved',
+      admin_approved_at: new Date().toISOString(),
+      admin_notes,
+      updated_at: new Date().toISOString()
+    };
+
+    this.setBuyingRequests(requests);
+    return true;
+  }
+
+  createProductReview(productId: string, sellerId: string, originalPrice: number): string {
+    const products = this.getAllProductsIncludingPending();
+    const product = products.find(p => p.id.toString() === productId);
+
+    if (!product) throw new Error('Product not found');
+
+    const review: AdminProductReview = {
+      id: Date.now().toString(),
+      product_id: productId,
+      seller_id: sellerId,
+      original_price: originalPrice,
+      status: 'pending_review',
+      created_at: new Date().toISOString(),
+      product: product
+    };
+
+    const reviews = this.getAdminProductReviews();
+    reviews.push(review);
+    this.setAdminProductReviews(reviews);
+
+    return review.id;
+  }
+
+  approveProductWithPriceAdjustment(reviewId: string, adjustedPrice?: number, adminNotes?: string): boolean {
+    const reviews = this.getAdminProductReviews();
+    const reviewIndex = reviews.findIndex(r => r.id === reviewId);
+
+    if (reviewIndex === -1) return false;
+
+    const review = reviews[reviewIndex];
+
+    // Update the review
+    reviews[reviewIndex] = {
+      ...review,
+      status: 'approved',
+      admin_adjusted_price: adjustedPrice,
+      admin_notes,
+      reviewed_at: new Date().toISOString()
+    };
+
+    this.setAdminProductReviews(reviews);
+
+    // Update the actual product with admin-adjusted price if provided
+    if (adjustedPrice !== undefined) {
+      const allProducts = this.getAllProductsIncludingPending();
+      const productIndex = allProducts.findIndex(p => p.id.toString() === review.product_id);
+
+      if (productIndex !== -1) {
+        allProducts[productIndex].price = adjustedPrice;
+
+        // Update in the appropriate storage
+        const demoProducts = this.getDemoProducts();
+        const sellerProducts = this.getDemoSellerProducts();
+
+        const demoIndex = demoProducts.findIndex(p => p.id.toString() === review.product_id);
+        const sellerIndex = sellerProducts.findIndex(p => p.id.toString() === review.product_id);
+
+        if (demoIndex !== -1) {
+          demoProducts[demoIndex].price = adjustedPrice;
+          this.setDemoProducts(demoProducts);
+        } else if (sellerIndex !== -1) {
+          sellerProducts[sellerIndex].price = adjustedPrice;
+          this.setDemoSellerProducts(sellerProducts);
+        }
+      }
+    }
+
+    return true;
   }
 }
 

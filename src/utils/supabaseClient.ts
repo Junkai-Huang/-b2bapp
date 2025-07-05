@@ -8,9 +8,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 // 类型定义
 export interface User {
   id: string
-  role: 'buyer' | 'seller'
+  role: 'buyer' | 'seller' | 'admin'
   business_name: string
   created_at: string
+  email?: string
 }
 
 export interface Product {
